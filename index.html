@@ -6,6 +6,9 @@
     <title>Commission Ledger Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PDF Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
@@ -148,9 +151,14 @@
 
         <!-- LEDGER VIEW -->
         <section id="view-ledger" class="view-section hidden">
-            <header class="mb-6 lg:mb-8">
-                <h2 class="text-xl lg:text-2xl font-bold text-slate-800">Parties Ledger</h2>
-                <p class="text-xs lg:text-sm text-slate-500">Comprehensive commission history by party</p>
+            <header class="mb-6 lg:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xl lg:text-2xl font-bold text-slate-800">Parties Ledger</h2>
+                    <p class="text-xs lg:text-sm text-slate-500">Comprehensive commission history by party</p>
+                </div>
+                <button onclick="exportAllToPDF()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-file-pdf"></i> Export Full Ledger
+                </button>
             </header>
 
             <div class="grid grid-cols-1 gap-4" id="ledger-container">
@@ -357,6 +365,88 @@
             }
         }
 
+        // PDF Export Logic
+        async function exportPartyPDF(partyName) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const partyEntries = entries.filter(e => e.name === partyName);
+            const total = partyEntries.reduce((acc, curr) => acc + curr.commAmount, 0);
+
+            // Document Styling
+            doc.setFontSize(22);
+            doc.setTextColor(30, 41, 59); // Slate-800
+            doc.text('IQS Broker', 14, 20);
+            
+            doc.setFontSize(10);
+            doc.setTextColor(100, 116, 139); // Slate-500
+            doc.text('Commission Ledger Report', 14, 26);
+            doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 31);
+
+            doc.setDrawColor(226, 232, 240);
+            doc.line(14, 38, 196, 38);
+
+            doc.setFontSize(14);
+            doc.setTextColor(37, 99, 235); // Blue-600
+            doc.text(`Party: ${partyName}`, 14, 48);
+
+            const tableData = partyEntries.map(e => [
+                e.date,
+                e.type.toUpperCase(),
+                e.po || e.no,
+                e.rate.toFixed(2),
+                e.weight.toFixed(2),
+                e.price.toLocaleString(),
+                e.commPercent + '%',
+                e.commAmount.toFixed(2)
+            ]);
+
+            doc.autoTable({
+                startY: 55,
+                head: [['Date', 'Type', 'Ref/PO', 'Rate', 'Wgt', 'Price', 'Comm%', 'Amount']],
+                body: tableData,
+                theme: 'striped',
+                headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+                foot: [['', '', '', '', '', 'TOTAL', '', total.toLocaleString()]],
+                footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' }
+            });
+
+            doc.save(`${partyName.replace(/\s+/g, '_')}_Ledger.pdf`);
+        }
+
+        async function exportAllToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const parties = [...new Set(entries.map(e => e.name))];
+
+            doc.setFontSize(22);
+            doc.text('IQS Broker - Master Ledger', 14, 20);
+            doc.setFontSize(10);
+            doc.text(`Full Portfolio Export - ${new Date().toLocaleDateString()}`, 14, 28);
+
+            let currentY = 40;
+
+            parties.forEach((party, index) => {
+                const pEntries = entries.filter(e => e.name === party);
+                const pTotal = pEntries.reduce((acc, curr) => acc + curr.commAmount, 0);
+
+                if (index > 0) doc.addPage();
+
+                doc.setFontSize(16);
+                doc.setTextColor(37, 99, 235);
+                doc.text(party, 14, 20);
+                
+                doc.autoTable({
+                    startY: 25,
+                    head: [['Date', 'Type', 'Ref/PO', 'Price', 'Comm%', 'Amount']],
+                    body: pEntries.map(e => [e.date, e.type, e.po || e.no, e.price, e.commPercent, e.commAmount.toFixed(2)]),
+                    foot: [['', '', '', '', 'TOTAL', pTotal.toFixed(2)]],
+                    headStyles: { fillColor: [30, 41, 59] }
+                });
+            });
+
+            doc.save(`IQS_Broker_Full_Ledger.pdf`);
+        }
+
         // Rendering Logic
         function renderAll() {
             renderStats();
@@ -441,9 +531,14 @@
                             <h4 class="text-lg font-bold text-slate-800">${partyName}</h4>
                             <p class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">${partyEntries.length} Records</p>
                         </div>
-                        <div class="text-left md:text-right">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase">Total Accrued</p>
-                            <h4 class="text-xl font-bold text-blue-600">${totalComm.toLocaleString('en-US', {minimumFractionDigits: 2})}</h4>
+                        <div class="flex items-center gap-4">
+                            <div class="text-left md:text-right">
+                                <p class="text-[10px] font-bold text-slate-400 uppercase">Total Accrued</p>
+                                <h4 class="text-xl font-bold text-blue-600">${totalComm.toLocaleString('en-US', {minimumFractionDigits: 2})}</h4>
+                            </div>
+                            <button onclick="exportPartyPDF('${partyName}')" class="bg-blue-50 text-blue-600 p-3 rounded-xl hover:bg-blue-100 transition-colors">
+                                <i class="fa-solid fa-download"></i>
+                            </button>
                         </div>
                     </div>
                     <div class="space-y-2">
