@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Commission Ledger Pro - V13</title>
+    <title>Commission Ledger Pro - V13 PRISM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- PDF Export Libraries -->
@@ -185,17 +185,16 @@
                         <input type="text" id="f-po" placeholder="Optional" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
                     <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Commission %</label>
+                        <input type="number" step="0.001" id="f-comm" required oninput="calculatePrice()" placeholder="e.g. 0.25" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rate</label>
                         <input type="number" step="0.01" id="f-rate" required oninput="calculatePrice()" placeholder="0.00" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Weight</label>
                         <input type="number" step="0.01" id="f-weight" required oninput="calculatePrice()" placeholder="0.00" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div class="space-y-1">
-                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Commission %</label>
-                        <!-- Fixed step to 0.001 to allow 0.25 -->
-                        <input type="number" step="0.001" id="f-comm" required placeholder="e.g. 0.25" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
                     <div class="space-y-1">
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Transport (Add/Sub)</label>
@@ -205,8 +204,13 @@
                         <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Misc. Exp</label>
                         <input type="number" step="0.01" id="f-misc" oninput="calculatePrice()" placeholder="0.00" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
+                    <!-- New Description Option -->
                     <div class="md:col-span-2 space-y-1">
-                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Grand Total (Incl. Exp)</label>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Description (Optional)</label>
+                        <input type="text" id="f-desc" placeholder="Add specific details or item description" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="md:col-span-2 space-y-1">
+                        <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Grand Total (Incl. Commission & Exp)</label>
                         <input type="number" id="f-price" readonly class="w-full p-4 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none cursor-not-allowed text-lg">
                     </div>
                 </form>
@@ -278,6 +282,7 @@
                         document.getElementById('f-comm').value = entry.commPercent;
                         document.getElementById('f-transport').value = entry.transport || 0;
                         document.getElementById('f-misc').value = entry.misc || 0;
+                        document.getElementById('f-desc').value = entry.desc || '';
                         calculatePrice();
                         submitBtn.innerText = "UPDATE RECORD";
                     }
@@ -302,9 +307,14 @@
             const weight = parseFloat(document.getElementById('f-weight').value) || 0;
             const transport = parseFloat(document.getElementById('f-transport').value) || 0;
             const misc = parseFloat(document.getElementById('f-misc').value) || 0;
+            const commPercent = parseFloat(document.getElementById('f-comm').value) || 0;
             
+            // Logic: Commission only on Product (rate * weight)
             const productPrice = rate * weight;
-            const grandTotal = productPrice + transport + misc;
+            const commission = (productPrice * commPercent) / 100;
+            
+            // Logic: Grand Total for Buyer/Supplier Bill = Product + Trans + Misc + Comm
+            const grandTotal = productPrice + transport + misc + commission;
             document.getElementById('f-price').value = grandTotal.toFixed(2);
         }
 
@@ -317,9 +327,13 @@
             const misc = parseFloat(document.getElementById('f-misc').value) || 0;
             const commPercent = parseFloat(document.getElementById('f-comm').value);
             
-            const price = (rate * weight);
-            const grandTotal = price + transport + misc;
-            const commAmount = (grandTotal * commPercent) / 100;
+            // FIXED: Commission only calculate on product
+            const productPrice = (rate * weight);
+            const commAmount = (productPrice * commPercent) / 100;
+            
+            // FIXED: Grand Total includes commission as an expense for the party
+            const grandTotal = productPrice + transport + misc + commAmount;
+            
             const editId = document.getElementById('f-id').value;
 
             const entryData = {
@@ -330,9 +344,11 @@
                 weight: weight,
                 transport: transport,
                 misc: misc,
-                price: grandTotal,
+                price: grandTotal, // Final Bill Amount
+                productPrice: productPrice,
                 commPercent: commPercent,
-                commAmount: commAmount
+                commAmount: commAmount,
+                desc: document.getElementById('f-desc').value || ''
             };
 
             if (editId) {
@@ -362,7 +378,6 @@
             }
         }
 
-        // PDF Generation
         function exportSingleBillPDF(id) {
             const entry = entries.find(e => e.id === id);
             if (!entry) return;
@@ -370,42 +385,94 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             
-            doc.setFontSize(22);
-            doc.setTextColor(30, 41, 59);
-            doc.text('AMI Broker', 14, 20);
-            doc.setFontSize(10);
-            doc.setTextColor(100, 116, 139);
-            doc.text('Commission Invoice', 14, 26);
+            // Header
+            doc.setFillColor(15, 23, 42);
+            doc.rect(0, 0, 210, 40, 'F');
             
-            doc.setDrawColor(226, 232, 240);
-            doc.line(14, 32, 196, 32);
-
-            doc.setFontSize(11);
+            doc.setFontSize(24);
+            doc.setTextColor(255, 255, 255);
+            doc.text('AMI Broker', 15, 20);
+            
+            doc.setFontSize(10);
+            doc.setTextColor(148, 163, 184);
+            doc.text('OFFICIAL INVOICE / VOUCHER', 15, 28);
+            
+            // Party Info
             doc.setTextColor(30, 41, 59);
-            doc.text(`Party: ${entry.name}`, 14, 45);
-            doc.text(`Date: ${entry.date}`, 140, 45);
-            doc.text(`Type: ${entry.type.toUpperCase()}`, 14, 51);
-            if (entry.po) doc.text(`PO Number: ${entry.po}`, 14, 57);
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'bold');
+            doc.text('BILL TO:', 15, 55);
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(14);
+            doc.text(entry.name.toUpperCase(), 15, 62);
+            
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'bold');
+            doc.text('INVOICE DETAILS:', 130, 55);
+            doc.setFont(undefined, 'normal');
+            doc.text(`DATE: ${entry.date}`, 130, 62);
+            doc.text(`TYPE: ${entry.type.toUpperCase()}`, 130, 67);
+            if(entry.po) doc.text(`PO NO: ${entry.po}`, 130, 72);
 
+            // Item Table
             doc.autoTable({
-                startY: 65,
-                head: [['Description', 'Rate', 'Weight', 'Transport', 'Misc', 'Grand Total']],
+                startY: 85,
+                head: [['Description', 'Rate', 'Weight', 'Product Total']],
                 body: [[
-                    `${entry.type.toUpperCase()} Services`,
+                    entry.desc || `${entry.type.toUpperCase()} Product Charges`,
                     entry.rate.toFixed(2),
                     entry.weight.toFixed(2),
-                    entry.transport.toFixed(2),
-                    entry.misc.toFixed(2),
-                    entry.price.toLocaleString()
+                    (entry.rate * entry.weight).toFixed(2)
                 ]],
-                theme: 'grid',
-                headStyles: { fillColor: [15, 23, 42] }
+                theme: 'striped',
+                headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+                styles: { fontSize: 10, cellPadding: 5 }
             });
 
-            const finalY = doc.lastAutoTable.finalY + 15;
-            doc.setFontSize(12);
-            doc.text(`Commission (${entry.commPercent}%): ${entry.commAmount.toFixed(2)}`, 196, finalY, { align: 'right' });
-            doc.save(`Bill_${entry.name}.pdf`);
+            // FIXED: Summary Breakdown as requested
+            const finalY = doc.lastAutoTable.finalY + 10;
+            doc.setDrawColor(226, 232, 240);
+            doc.line(120, finalY, 195, finalY);
+            
+            const summaryX = 130;
+            const summaryValX = 195;
+            let currentSummaryY = finalY + 10;
+
+            doc.setFontSize(10);
+            doc.text('Subtotal (Product):', summaryX, currentSummaryY);
+            doc.text((entry.rate * entry.weight).toFixed(2), summaryValX, currentSummaryY, { align: 'right' });
+            
+            currentSummaryY += 8;
+            doc.text('Transport Charges:', summaryX, currentSummaryY);
+            doc.text(entry.transport.toFixed(2), summaryValX, currentSummaryY, { align: 'right' });
+            
+            currentSummaryY += 8;
+            doc.text('Misc Expenses:', summaryX, currentSummaryY);
+            doc.text(entry.misc.toFixed(2), summaryValX, currentSummaryY, { align: 'right' });
+
+            // Show commission as expense
+            currentSummaryY += 8;
+            doc.setTextColor(37, 99, 235);
+            doc.text(`Commission (${entry.commPercent}%):`, summaryX, currentSummaryY);
+            doc.text(entry.commAmount.toFixed(2), summaryValX, currentSummaryY, { align: 'right' });
+
+            // Grand Total (Final calculation for the bill)
+            currentSummaryY += 12;
+            doc.setFillColor(248, 250, 252);
+            doc.rect(120, currentSummaryY - 7, 75, 12, 'F');
+            
+            doc.setTextColor(15, 23, 42);
+            doc.setFont(undefined, 'bold');
+            doc.text('GRAND TOTAL:', summaryX, currentSummaryY);
+            doc.text(entry.price.toFixed(2), summaryValX, currentSummaryY, { align: 'right' });
+
+            // Footer
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            doc.setFont(undefined, 'italic');
+            doc.text('This is a computer generated document including applicable broker commission.', 105, 285, { align: 'center' });
+
+            doc.save(`Bill_${entry.name}_${entry.date}.pdf`);
         }
 
         async function exportPartyPDF(partyName) {
@@ -421,9 +488,9 @@
 
             doc.autoTable({
                 startY: 40,
-                head: [['Date', 'PO', 'Wgt', 'Transport', 'Misc', 'Total Price', 'Comm']],
+                head: [['Date', 'PO', 'Wgt', 'Transport', 'Misc', 'Bill Total', 'Comm']],
                 body: partyEntries.map(e => [e.date, e.po || '-', e.weight, e.transport, e.misc, e.price.toFixed(2), e.commAmount.toFixed(2)]),
-                foot: [['', '', '', '', '', 'TOTAL', total.toLocaleString()]],
+                foot: [['', '', '', '', '', 'TOTAL COMM', total.toLocaleString()]],
                 headStyles: { fillColor: [15, 23, 42] }
             });
             doc.save(`${partyName}_Ledger.pdf`);
@@ -443,18 +510,16 @@
                 doc.text(party, 14, 20);
                 doc.autoTable({
                     startY: 25,
-                    head: [['Date', 'Type', 'PO', 'Price', 'Comm %', 'Comm Amount']],
+                    head: [['Date', 'Type', 'PO', 'Bill Total', 'Comm %', 'Comm Amount']],
                     body: pEntries.map(e => [e.date, e.type, e.po || '-', e.price.toFixed(2), e.commPercent, e.commAmount.toFixed(2)]),
-                    foot: [['', '', '', '', 'TOTAL', pTotal.toFixed(2)]],
+                    foot: [['', '', '', '', 'TOTAL COMM', pTotal.toFixed(2)]],
                     headStyles: { fillColor: [30, 41, 59] }
                 });
             });
             doc.save(`Master_Ledger.pdf`);
         }
 
-        // Logic Helpers
         function getSortedEntries() {
-            // Sort by Name Ascending
             return [...entries].sort((a, b) => a.name.localeCompare(b.name));
         }
 
@@ -476,12 +541,14 @@
 
         function renderRecentTable() {
             const tbody = document.getElementById('recent-table-body');
-            // Show latest 10 by timestamp/id descending
             const recent = [...entries].sort((a,b) => b.id - a.id).slice(0, 10);
             tbody.innerHTML = recent.map(e => `
                 <tr class="border-b border-slate-50 hover:bg-slate-50/50">
                     <td class="p-4 text-slate-500 font-medium">${e.date}</td>
-                    <td class="p-4 font-bold text-slate-800">${e.name}</td>
+                    <td class="p-4">
+                        <div class="font-bold text-slate-800">${e.name}</div>
+                        ${e.desc ? `<div class="text-[10px] text-slate-400 truncate max-w-[150px]">${e.desc}</div>` : ''}
+                    </td>
                     <td class="p-4">
                         <span class="px-2 py-1 rounded text-[10px] font-bold uppercase ${e.type === 'buyer' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
                             ${e.type}
@@ -500,7 +567,10 @@
             tbody.innerHTML = sorted.map(e => `
                 <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                     <td class="p-4 whitespace-nowrap text-slate-500 font-medium">${e.date}</td>
-                    <td class="p-4 font-bold text-slate-800">${e.name}</td>
+                    <td class="p-4">
+                        <div class="font-bold text-slate-800">${e.name}</div>
+                        ${e.desc ? `<div class="text-[10px] text-slate-400 italic">${e.desc}</div>` : ''}
+                    </td>
                     <td class="p-4 text-slate-500 font-medium">${e.po || '—'}</td>
                     <td class="p-4 whitespace-nowrap">
                         <div class="text-xs">Rate: <span class="font-bold">${e.rate}</span></div>
@@ -556,7 +626,7 @@
                                     <span class="w-2 h-2 rounded-full ${pe.type === 'buyer' ? 'bg-emerald-500' : 'bg-rose-500'}"></span>
                                     <div>
                                         <div class="font-bold text-slate-700">${pe.date}</div>
-                                        <div class="text-[10px] text-slate-400 uppercase font-bold">PO: ${pe.po || 'N/A'}</div>
+                                        <div class="text-[10px] text-slate-400 uppercase font-bold">PO: ${pe.po || 'N/A'} ${pe.desc ? ` | ${pe.desc}` : ''}</div>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-4">
